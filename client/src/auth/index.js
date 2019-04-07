@@ -1,4 +1,3 @@
-import Auth0Lock from 'auth0-lock'
 import gql from 'graphql-tag'
 
 import { getItem, setItem } from '../utils/local-storage'
@@ -7,7 +6,9 @@ import Log from '../utils/log'
 
 import { client } from '../graphql/apollo'
 
-import { AUTH_CONFIG } from './Auth0' // create by renaming Auth0.sample.js to Auth0.js and setting vars
+//    logo: 'https://aadevelop.blob.core.windows.net/module-master/assets/logos/Superalgos-mark-auth0-lock.png',
+//    primaryColor: '#e3493c'
+
 
 const AUTHENTICATE = gql`
   mutation authenticate($idToken: String!) {
@@ -29,53 +30,6 @@ const VERIFY_TEAM_INVITE = gql`
   }
 `
 
-export const defaultOptions = {
-  oidcConformant: true,
-  autoclose: true,
-  allowedConnections: ['Username-Password-Authentication'],
-  auth: {
-    sso: true,
-    redirectUrl: window.location.origin + '/callback',
-    responseType: 'token id_token',
-    audience: `${AUTH_CONFIG.api_audience}`,
-    params: {
-      scope: `openid profile email user_metadata app_metadata picture`
-    }
-  },
-  theme: {
-    logo: 'https://aadevelop.blob.core.windows.net/module-master/assets/logos/Superalgos-mark-auth0-lock.png',
-    primaryColor: '#e3493c'
-  },
-  languageDictionary: {
-    title: 'Superalgos Platform'
-  },
-  avatar:null
-}
-
-export const inviteOptions = {
-  oidcConformant: true,
-  autoclose: false,
-  allowedConnections: ['Username-Password-Authentication'],
-  allowShowPassword: true,
-  auth: {
-    sso: false,
-    redirectUrl: window.location.origin + '/callback',
-    responseType: 'token id_token',
-    audience: `${AUTH_CONFIG.api_audience}`,
-    params: {
-      state: '',
-      scope: `email`
-    }
-  },
-  prefill: { email: '' }
-}
-
-let lock = new Auth0Lock(
-  AUTH_CONFIG.clientId,
-  AUTH_CONFIG.domain,
-  defaultOptions
-)
-
 class Auth {
   constructor (cb, apolloClient) {
     this.handleAuthentication()
@@ -92,16 +46,17 @@ class Auth {
   login () {
     // Call the show method to display the widget.
     Log.info('logging in')
-    lock.show()
+    // TODO show login form
   }
 
-  async loginInvite (jwt) {
+  async loginInvite () {
     let email
     let team
     try {
       const data = await client.mutate({
         mutation: VERIFY_TEAM_INVITE,
-        variables: { token: jwt }
+        // TODO add CSR
+        variables: { CSR: '' }
       })
 
       Log.info('auth.loginInvite')
@@ -116,43 +71,16 @@ class Auth {
     }
     inviteOptions.prefill.email = email
     inviteOptions.auth.params.state = `${email}|${team}`
-    let lockInvite = new Auth0Lock(
-      AUTH_CONFIG.clientId,
-      AUTH_CONFIG.domain,
-      inviteOptions
-    )
-    lockInvite.show()
+    // TODO show invite form?
   }
 
   handleAuthentication () {
-    // Add a callback for Lock's `authenticated` event
-    lock.on('authenticated', this.setSession.bind(this))
-    // Add a callback for Lock's `authorization_error` event
-    lock.on('authorization_error', err => {
-      const data = { status: `error`, errMessage: err.error }
-      this.cb(data)
-    })
+    // TODO generate or unlock X.509 client certificate
   }
 
   checkSession () {
     return new Promise((resolve, reject) => {
-      // Add a callback for Lock's `authenticated` event
-      lock.checkSession(
-        {
-          responseType: 'token id_token',
-          audience: AUTH_CONFIG.api_audience,
-          scope: 'openid email profile',
-          connection: 'github',
-          prompt: 'none'
-        },
-        function (err, authResult) {
-          if (!err) {
-            resolve(authResult)
-          } else {
-            reject(err)
-          }
-        }
-      )
+      // TODO check if X.509 client certificate is unlocked
     })
   }
 
@@ -208,15 +136,11 @@ class Auth {
   logout () {
     // Clear access token and ID token from local storage
     window.localStorage.clear()
-    deleteCookie('ajs_anonymous_id')
-    deleteCookie('ajs_user_id')
-    deleteCookie('current_tenant')
-
-    lock.logout({ returnTo: AUTH_CONFIG.logoutUrl })
+    // TODO forget X.509 password
   }
 
   async isAuthenticated () {
-    // check session and run Auth0 SS0
+    // check session for unlocked X.509 cert
     const getUser = await getItem('authUser')
     const getExpires = await getItem('expires_at')
     let user = JSON.parse(getUser)
@@ -232,37 +156,11 @@ class Auth {
       return user
     }
 
-    // TODO improve to check the session validation on client side
-    const checkSSO = await this.checkSession()
-      .then(result => {
-        console.log('handleAuth.checksessions: ', result)
-        const user = {
-          authId: result.idTokenPayload.sub,
-          alias: result.idTokenPayload.nickname
-        }
-        setItem('authUser', JSON.stringify(user))
-        // user confirmed, log into client
-        this.setSession(result)
-        return result.idTokenPayload
-      })
-      .catch(err => {
-        if (err.error === 'login_required') {
-          // If graphql error, update session
-          // otherwise send to login
-          // return this.login()
-        }
-        return err
-      })
-
     if (/manage|profile|create|dashboard/.test(window.location.href) && !user) {
       this.login()
     }
-
-    if (validObject(checkSSO, 'error')) {
-      return false
-    } else {
-      return checkSSO
-    }
+    // TODO this probably shouldn't always return false...
+    return false
   }
 }
 
